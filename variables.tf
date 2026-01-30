@@ -37,7 +37,7 @@ variable "enable_providers" {
 variable "enable_modules" {
   description = "Enable loading of 50 git modules during terraform init"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "local_files_count" {
