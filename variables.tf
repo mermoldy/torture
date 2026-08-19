@@ -7,13 +7,13 @@ variable "small_resource_count" {
 variable "medium_resource_count" {
   description = "Number of medium resources to create. Medium resources are medium-cost to plan."
   type        = number
-  default     = 1000
+  default     = 500
 }
 
 variable "heavy_resource_count" {
   description = "Number of heavy resources to create. Heavy resources are expensive to plan."
   type        = number
-  default     = 1000
+  default     = 200
 }
 
 variable "medium_log_lines_per_resource" {
@@ -25,7 +25,7 @@ variable "medium_log_lines_per_resource" {
 variable "heavy_log_lines_per_resource" {
   description = "Number of log lines generated while applying each heavy resource"
   type        = number
-  default     = 1000
+  default     = 100
 }
 
 variable "enable_providers" {
