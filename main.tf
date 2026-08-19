@@ -170,15 +170,13 @@ resource "null_resource" "heavy_resource" {
   }
 }
 
-# module "extra_providers" {
-#  count  = var.enable_providers ? 1 : 0
-#  source = var.enable_providers ? "./modules/many-providers" : "./modules/empty"
-# }
+module "extra_providers" {
+ source = "./modules/many-providers"
+ }
 
-# module "extra_modules" {
-#  count  = var.enable_modules ? 1 : 0
-#  source = var.enable_modules ? "./modules/many-modules" : "./modules/empty"
-#}
+module "extra_modules" {
+  source =  "./modules/many-modules"
+}
 
 resource "local_file" "init_files" {
   count    = var.local_files_count
