@@ -1,19 +1,19 @@
 variable "small_resource_count" {
   description = "Number of small resources to create. Small resources are low-cost to plan."
   type        = number
-  default     = 1000
+  default     = 100
 }
 
 variable "medium_resource_count" {
   description = "Number of medium resources to create. Medium resources are medium-cost to plan."
   type        = number
-  default     = 200
+  default     = 20
 }
 
 variable "heavy_resource_count" {
   description = "Number of heavy resources to create. Heavy resources are expensive to plan."
   type        = number
-  default     = 100
+  default     = 10
 }
 
 variable "medium_log_lines_per_resource" {
