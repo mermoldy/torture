@@ -171,13 +171,13 @@ resource "null_resource" "heavy_resource" {
 }
 
 module "extra_providers" {
- count  = var.enable_providers ? 1 : 0
- source = var.enable_providers ? "./modules/many-providers" : "./modules/empty"
- }
+ count  = 1
+ source = "./modules/many-providers"
+}
 
 module "extra_modules" {
-  count  = var.enable_modules ? 1 : 0
- source = var.enable_modules ? "./modules/many-modules" : "./modules/empty"
+  count  = 1
+  source = "./modules/many-modules"
 }
 
 resource "local_file" "init_files" {
