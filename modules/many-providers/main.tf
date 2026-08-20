@@ -175,9 +175,9 @@ terraform {
   }
 }
 
-# Dummy resource to force provider downloads
+# Dummy resource so the module is not empty
 resource "null_resource" "provider_init" {
   triggers = {
-    timestamp = timestamp()
+    module = "many-providers"
   }
 }

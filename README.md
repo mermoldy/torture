@@ -17,6 +17,9 @@ CPU-heavy interpolation, and apply/destroy log volume.
 - Providers: optional download of ~50 providers via `modules/extra_providers`
 - Modules: optional download of 50 git modules via `modules/extra_modules`
 
+The extra modules stress init only: each contributes one dummy `null_resource`,
+every resource under test comes from the root module.
+
 ## Run test locally
 
 To execute test locally, run:

@@ -9,35 +9,22 @@ from jinja2 import Template
 
 MODULES_DIR = Path("modules")
 
-# Resource labels and the output name are both derived from `prefix`, so the same
-# template can be rendered into several .tf files of one module without clashing.
-MAIN_TF_TEMPLATE = Template("""
+# Init stress only: bulk is variable declarations with constant defaults, and each
+# module contributes a single dummy resource. No outputs, locals or validation.
+
+BULK_TF_TEMPLATE = Template("""
 # {{ module_name }}
 # {{ description }}
 
-{% for i in range(resource_count) %}
-resource "null_resource" "{{ prefix }}_{{ i }}" {
-  triggers = {
-    id        = "{{ prefix }}-{{ i }}"
-    timestamp = timestamp()
-    {% if include_data %}
-    data      = "{{ random_data() }}"
-    {% endif %}
-  }
+{% for i in range(entry_count) %}
+variable "{{ prefix }}_{{ i }}" {
+  description = "Entry {{ i }} of {{ prefix }}"
+  type        = string
+  default     = "{{ prefix }}-{{ i }}{% if include_data %}-{{ random_data() }}{% endif %}"
 }
 {% endfor %}
-
-output "{{ prefix }}_output" {
-  value = {
-    {% for i in range(resource_count) %}
-    resource_{{ i }} = null_resource.{{ prefix }}_{{ i }}.id
-    {% endfor %}
-  }
-}
 """)
 
-# Terraform accepts only one required_providers block per module, so this lives in
-# its own file written once per module directory instead of in a per-file template.
 VERSIONS_TF_TEMPLATE = Template("""
 terraform {
   required_version = ">= 1.0"
@@ -50,110 +37,83 @@ terraform {
 }
 """)
 
+DUMMY_TF_TEMPLATE = Template("""
+resource "null_resource" "dummy" {
+  triggers = {
+    module = "{{ name }}"
+  }
+}
+""")
+
 VARIABLE_TF_TEMPLATE = Template("""
 {% for i in range(var_count) %}
 variable "var_{{ i }}" {
   description = "Variable {{ i }} for {{ module_name }}"
   type        = string
   default     = "default_value_{{ i }}"
-
-  validation {
-    condition     = length(var.var_{{ i }}) > 0
-    error_message = "Variable var_{{ i }} must not be empty."
-  }
 }
 
 {% endfor %}
 """)
 
-OUTPUT_TF_TEMPLATE = Template("""
-output "all_variables" {
-  description = "All variables from {{ module_name }}"
-  value = {
-    {% for i in range(var_count) %}
-    var_{{ i }} = var.var_{{ i }}
-    {% endfor %}
+DATA_TF_TEMPLATE = Template("""
+variable "large_data_map" {
+  description = "Large flat map for {{ module_name }}"
+  type        = any
+  default = {
+{%- for i in range(map_size) %}
+    {{ ('"key_' ~ i ~ '"').ljust(key_width) }} = "{{ random_data() }}"
+{%- endfor %}
   }
 }
-""")
 
-LOCALS_TF_TEMPLATE = Template("""
-locals {
-  {% for i in range(local_count) %}
-  local_{{ i }} = "local_value_{{ i }}_{{ random_string() }}"
-  {% endfor %}
-
-  {% if include_large_data %}
-  large_data_map = {
-    {% for i in range(map_size) %}
-    "key_{{ i }}" = "{{ random_data() }}"
-    {% endfor %}
-  }
-
-  large_json_structure = jsonencode({
-    {% for i in range(json_items) %}
-    item_{{ i }} = {
+variable "large_structure" {
+  description = "Large nested structure for {{ module_name }}"
+  type        = any
+  default = {
+{%- for i in range(items) %}
+    "item_{{ i }}" = {
       id          = {{ i }}
       name        = "Item {{ i }}"
       description = "{{ random_data() }}"
       metadata = {
-        {% for j in range(5) %}
+{%- for j in range(5) %}
         meta_key_{{ j }} = "{{ random_string() }}"
-        {% endfor %}
+{%- endfor %}
       }
     }
-    {% endfor %}
-  })
-  {% endif %}
+{%- endfor %}
+  }
 }
 """)
 
 SMALL_FILE_TEMPLATE = Template("""
 # Small file {{ index }}
 variable "small_var_{{ index }}" {
-  default = "value_{{ index }}"
-}
-
-locals {
-  small_local_{{ index }} = "local_{{ index }}_{{ random_string() }}"
-}
-
-resource "null_resource" "small_{{ index }}" {
-  triggers = {
-    value = var.small_var_{{ index }}
-  }
+  type    = string
+  default = "value_{{ index }}_{{ random_string() }}"
 }
 """)
 
 SUBMODULE_TEMPLATE = Template("""
 # Submodule {{ name }}
-variable "submodule_input" {
+{% for i in range(entry_count) %}
+variable "sub_{{ name }}_{{ i }}" {
   type    = string
-  default = "submodule_{{ name }}"
-}
-
-{% for i in range(resource_count) %}
-resource "null_resource" "sub_{{ name }}_{{ i }}" {
-  triggers = {
-    input = var.submodule_input
-    index = {{ i }}
-  }
+  default = "sub_{{ name }}_value_{{ i }}"
 }
 {% endfor %}
-
-output "submodule_{{ name }}_output" {
-  value = {
-    {% for i in range(resource_count) %}
-    resource_{{ i }} = null_resource.sub_{{ name }}_{{ i }}.id
-    {% endfor %}
-  }
-}
 """)
 
 
 def write_versions_tf(module_dir):
-    """Write the single terraform/required_providers block for a module directory"""
+    """Write the module's single required_providers block"""
     (module_dir / "versions.tf").write_text(VERSIONS_TF_TEMPLATE.render())
+
+
+def write_dummy_tf(module_dir, name):
+    """Write the module's single dummy resource"""
+    (module_dir / "dummy.tf").write_text(DUMMY_TF_TEMPLATE.render(name=name))
 
 
 def random_string(length=20):
@@ -215,10 +175,10 @@ def create_module_01_huge_single_file():
     module_dir = MODULES_DIR / "module-01-huge-single-file"
     module_dir.mkdir(parents=True, exist_ok=True)
 
-    content = MAIN_TF_TEMPLATE.render(
+    content = BULK_TF_TEMPLATE.render(
         module_name="Module 01",
-        description="Single huge Terraform file with 5000 resources",
-        resource_count=5000,
+        description="Single huge Terraform file with 5000 declarations",
+        entry_count=5000,
         prefix="huge_single",
         include_data=True,
         random_data=random_data,
@@ -226,6 +186,7 @@ def create_module_01_huge_single_file():
 
     (module_dir / "main.tf").write_text(content)
     write_versions_tf(module_dir)
+    write_dummy_tf(module_dir, "module-01-huge-single-file")
 
     # Add binary companion file (no compression)
     create_binary_file(module_dir / "data.bin", 5, compression_level=None)
@@ -240,16 +201,17 @@ def create_module_02_multiple_large_files():
     module_dir.mkdir(parents=True, exist_ok=True)
 
     for i in range(1, 6):
-        content = MAIN_TF_TEMPLATE.render(
+        content = BULK_TF_TEMPLATE.render(
             module_name=f"Module 02 - File {i}",
             description=f"Large file {i} of 5",
-            resource_count=1000,
+            entry_count=1000,
             prefix=f"large_file_{i}",
             include_data=True,
             random_data=random_data,
         )
         (module_dir / f"resources_{i}.tf").write_text(content)
     write_versions_tf(module_dir)
+    write_dummy_tf(module_dir, "module-02-multiple-large-files")
 
     # Add binary files with different compression levels
     for i in range(1, 6):
@@ -272,19 +234,8 @@ def create_module_03_many_tiny_files():
         content = SMALL_FILE_TEMPLATE.render(index=i, random_string=random_string)
         (module_dir / f"var_{i:04d}.tf").write_text(content)
 
-    # Create aggregator
-    aggregator_vars = "\n".join(
-        [f"    var_{i} = var.small_var_{i}" for i in range(1, 1001)]
-    )
-    (module_dir / "main.tf").write_text(f"""
-# Module 03 - Aggregator
-resource "null_resource" "aggregator" {{
-  triggers = {{
-{aggregator_vars}
-  }}
-}}
-""")
     write_versions_tf(module_dir)
+    write_dummy_tf(module_dir, "module-03-many-tiny-files")
 
     # Add many tiny binary files
     for i in range(1, 51):  # 50 tiny binary files
@@ -304,16 +255,17 @@ def create_module_04_medium_complexity():
     module_dir.mkdir(parents=True, exist_ok=True)
 
     for i in range(1, 51):
-        content = MAIN_TF_TEMPLATE.render(
+        content = BULK_TF_TEMPLATE.render(
             module_name=f"Module 04 - Block {i}",
             description=f"Medium file {i} of 50",
-            resource_count=50,
+            entry_count=50,
             prefix=f"medium_{i}",
             include_data=True,
             random_data=random_data,
         )
         (module_dir / f"block_{i:02d}.tf").write_text(content)
     write_versions_tf(module_dir)
+    write_dummy_tf(module_dir, "module-04-medium-complexity")
 
     # Add medium binary files with varying compression
     for i in range(1, 11):
@@ -337,16 +289,15 @@ def create_module_05_deep_nested():
         current_dir = current_dir / f"level_{depth:02d}"
         current_dir.mkdir(parents=True, exist_ok=True)
 
-        content = MAIN_TF_TEMPLATE.render(
+        content = BULK_TF_TEMPLATE.render(
             module_name=f"Module 05 - Level {depth}",
             description=f"Nested at depth {depth}",
-            resource_count=100,
+            entry_count=100,
             prefix=f"nested_depth_{depth}",
             include_data=True,
             random_data=random_data,
         )
         (current_dir / "resources.tf").write_text(content)
-        write_versions_tf(current_dir)
 
         # Add binary file at each level
         create_binary_file(
@@ -359,39 +310,29 @@ def create_module_05_deep_nested():
 # Contains 10 levels of nested directories
 """)
     write_versions_tf(module_dir)
+    write_dummy_tf(module_dir, "module-05-deep-nested")
 
     click.echo(f"  ✓ Module 05 created ({get_dir_size(module_dir)})")
 
 
 def create_module_06_data_heavy():
     """Module 6: JSON/YAML heavy (large embedded data)"""
-    click.echo("Creating Module 06: Data heavy (large JSON/maps)")
+    click.echo("Creating Module 06: Data heavy (large maps/structures)")
     module_dir = MODULES_DIR / "module-06-data-heavy"
     module_dir.mkdir(parents=True, exist_ok=True)
 
-    content = LOCALS_TF_TEMPLATE.render(
+    content = DATA_TF_TEMPLATE.render(
         module_name="Module 06",
-        local_count=100,
-        include_large_data=True,
         map_size=2000,
-        json_items=1000,
+        key_width=len('"key_1999"'),
+        items=1000,
         random_string=random_string,
         random_data=random_data,
     )
 
-    (module_dir / "locals.tf").write_text(content)
-
-    # Create main.tf with data processing
-    (module_dir / "main.tf").write_text("""
-# Module 06 - Data Heavy
-resource "null_resource" "data_processor" {
-  triggers = {
-    json_hash = md5(local.large_json_structure)
-    map_hash  = md5(jsonencode(local.large_data_map))
-  }
-}
-""")
+    (module_dir / "data.tf").write_text(content)
     write_versions_tf(module_dir)
+    write_dummy_tf(module_dir, "module-06-data-heavy")
 
     # Add highly compressible binary file (lots of zeros)
     dd_cmd = [
@@ -422,11 +363,8 @@ def create_module_07_variable_explosion():
     # Create variables file
     content = VARIABLE_TF_TEMPLATE.render(var_count=5000, module_name="Module 07")
     (module_dir / "variables.tf").write_text(content)
-
-    # Create outputs file
-    content = OUTPUT_TF_TEMPLATE.render(var_count=5000, module_name="Module 07")
-    (module_dir / "outputs.tf").write_text(content)
     write_versions_tf(module_dir)
+    write_dummy_tf(module_dir, "module-07-variable-explosion")
 
     # Add uncompressed binary file
     create_binary_file(module_dir / "uncompressed.bin", 10, compression_level=None)
@@ -442,10 +380,10 @@ def create_module_08_mixed_sizes():
 
     # Create 3 large files
     for i in range(1, 4):
-        content = MAIN_TF_TEMPLATE.render(
+        content = BULK_TF_TEMPLATE.render(
             module_name=f"Module 08 - Large {i}",
             description=f"Large mixed file {i}",
-            resource_count=800,
+            entry_count=800,
             prefix=f"large_mixed_{i}",
             include_data=True,
             random_data=random_data,
@@ -457,6 +395,7 @@ def create_module_08_mixed_sizes():
         content = SMALL_FILE_TEMPLATE.render(index=i, random_string=random_string)
         (module_dir / f"small_{i:03d}.tf").write_text(content)
     write_versions_tf(module_dir)
+    write_dummy_tf(module_dir, "module-08-mixed-sizes")
 
     # Mix of binary files with different compression
     create_binary_file(module_dir / "no_compression.bin", 5, compression_level=None)
@@ -488,6 +427,7 @@ module "sub_c" {
 }
 """)
     write_versions_tf(module_dir)
+    write_dummy_tf(module_dir, "module-09-submodules")
 
     # Create 3 submodules
     for letter in ["a", "b", "c"]:
@@ -495,9 +435,10 @@ module "sub_c" {
         sub_dir.mkdir(parents=True, exist_ok=True)
 
         # Create submodule main file
-        content = SUBMODULE_TEMPLATE.render(name=letter, resource_count=200)
+        content = SUBMODULE_TEMPLATE.render(name=letter, entry_count=200)
         (sub_dir / "main.tf").write_text(content)
         write_versions_tf(sub_dir)
+        write_dummy_tf(sub_dir, f"module-09-sub-{letter}")
 
         # Create sub-submodules
         submodule_calls = []
@@ -506,10 +447,11 @@ module "sub_c" {
             sub_sub_dir.mkdir(parents=True, exist_ok=True)
 
             content = SUBMODULE_TEMPLATE.render(
-                name=f"{letter}_{num}", resource_count=100
+                name=f"{letter}_{num}", entry_count=100
             )
             (sub_sub_dir / "main.tf").write_text(content)
             write_versions_tf(sub_sub_dir)
+            write_dummy_tf(sub_sub_dir, f"module-09-sub-{letter}-{num}")
 
             # Add binary file to sub-submodule
             create_binary_file(
@@ -538,10 +480,10 @@ def create_module_10_extreme():
     module_dir.mkdir(parents=True, exist_ok=True)
 
     # One huge file
-    content = MAIN_TF_TEMPLATE.render(
+    content = BULK_TF_TEMPLATE.render(
         module_name="Module 10 - Huge",
         description="Extreme module - huge file component",
-        resource_count=2000,
+        entry_count=2000,
         prefix="extreme_huge",
         include_data=True,
         random_data=random_data,
@@ -550,10 +492,10 @@ def create_module_10_extreme():
 
     # 100 medium files
     for i in range(1, 101):
-        content = MAIN_TF_TEMPLATE.render(
+        content = BULK_TF_TEMPLATE.render(
             module_name=f"Module 10 - Medium {i}",
             description=f"Extreme module - medium file {i}",
-            resource_count=50,
+            entry_count=50,
             prefix=f"extreme_medium_{i}",
             include_data=True,
             random_data=random_data,
@@ -569,10 +511,10 @@ def create_module_10_extreme():
     nested_dir = module_dir / "nested" / "level1" / "level2" / "level3"
     nested_dir.mkdir(parents=True, exist_ok=True)
 
-    content = MAIN_TF_TEMPLATE.render(
+    content = BULK_TF_TEMPLATE.render(
         module_name="Module 10 - Nested",
         description="Extreme module - nested component",
-        resource_count=100,
+        entry_count=100,
         prefix="extreme_nested",
         include_data=True,
         random_data=random_data,
@@ -581,17 +523,17 @@ def create_module_10_extreme():
     write_versions_tf(nested_dir)
 
     # Large data file
-    content = LOCALS_TF_TEMPLATE.render(
+    content = DATA_TF_TEMPLATE.render(
         module_name="Module 10",
-        local_count=200,
-        include_large_data=True,
         map_size=1000,
-        json_items=1000,
+        key_width=len('"key_999"'),
+        items=1000,
         random_string=random_string,
         random_data=random_data,
     )
     (module_dir / "data.tf").write_text(content)
     write_versions_tf(module_dir)
+    write_dummy_tf(module_dir, "module-10-extreme")
 
     # Variety of binary files
     create_binary_file(module_dir / "no_compress.bin", 10, compression_level=None)
