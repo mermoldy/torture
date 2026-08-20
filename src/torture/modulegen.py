@@ -9,22 +9,14 @@ from jinja2 import Template
 
 MODULES_DIR = Path("modules")
 
+# Resource labels and the output name are both derived from `prefix`, so the same
+# template can be rendered into several .tf files of one module without clashing.
 MAIN_TF_TEMPLATE = Template("""
 # {{ module_name }}
 # {{ description }}
 
-terraform {
-  required_version = ">= 1.0"
-  required_providers {
-    null = {
-      source  = "hashicorp/null"
-      version = "~> 3.2"
-    }
-  }
-}
-
 {% for i in range(resource_count) %}
-resource "null_resource" "resource_{{ i }}" {
+resource "null_resource" "{{ prefix }}_{{ i }}" {
   triggers = {
     id        = "{{ prefix }}-{{ i }}"
     timestamp = timestamp()
@@ -38,8 +30,22 @@ resource "null_resource" "resource_{{ i }}" {
 output "{{ prefix }}_output" {
   value = {
     {% for i in range(resource_count) %}
-    resource_{{ i }} = null_resource.resource_{{ i }}.id
+    resource_{{ i }} = null_resource.{{ prefix }}_{{ i }}.id
     {% endfor %}
+  }
+}
+""")
+
+# Terraform accepts only one required_providers block per module, so this lives in
+# its own file written once per module directory instead of in a per-file template.
+VERSIONS_TF_TEMPLATE = Template("""
+terraform {
+  required_version = ">= 1.0"
+  required_providers {
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
   }
 }
 """)
@@ -145,6 +151,11 @@ output "submodule_{{ name }}_output" {
 """)
 
 
+def write_versions_tf(module_dir):
+    """Write the single terraform/required_providers block for a module directory"""
+    (module_dir / "versions.tf").write_text(VERSIONS_TF_TEMPLATE.render())
+
+
 def random_string(length=20):
     """Generate random string"""
     return "".join(random.choices(string.ascii_letters + string.digits, k=length))
@@ -214,6 +225,7 @@ def create_module_01_huge_single_file():
     )
 
     (module_dir / "main.tf").write_text(content)
+    write_versions_tf(module_dir)
 
     # Add binary companion file (no compression)
     create_binary_file(module_dir / "data.bin", 5, compression_level=None)
@@ -237,6 +249,7 @@ def create_module_02_multiple_large_files():
             random_data=random_data,
         )
         (module_dir / f"resources_{i}.tf").write_text(content)
+    write_versions_tf(module_dir)
 
     # Add binary files with different compression levels
     for i in range(1, 6):
@@ -271,6 +284,7 @@ resource "null_resource" "aggregator" {{
   }}
 }}
 """)
+    write_versions_tf(module_dir)
 
     # Add many tiny binary files
     for i in range(1, 51):  # 50 tiny binary files
@@ -299,6 +313,7 @@ def create_module_04_medium_complexity():
             random_data=random_data,
         )
         (module_dir / f"block_{i:02d}.tf").write_text(content)
+    write_versions_tf(module_dir)
 
     # Add medium binary files with varying compression
     for i in range(1, 11):
@@ -331,6 +346,7 @@ def create_module_05_deep_nested():
             random_data=random_data,
         )
         (current_dir / "resources.tf").write_text(content)
+        write_versions_tf(current_dir)
 
         # Add binary file at each level
         create_binary_file(
@@ -342,6 +358,7 @@ def create_module_05_deep_nested():
 # Module 05 - Deep Nested Structure
 # Contains 10 levels of nested directories
 """)
+    write_versions_tf(module_dir)
 
     click.echo(f"  ✓ Module 05 created ({get_dir_size(module_dir)})")
 
@@ -374,6 +391,7 @@ resource "null_resource" "data_processor" {
   }
 }
 """)
+    write_versions_tf(module_dir)
 
     # Add highly compressible binary file (lots of zeros)
     dd_cmd = [
@@ -408,6 +426,7 @@ def create_module_07_variable_explosion():
     # Create outputs file
     content = OUTPUT_TF_TEMPLATE.render(var_count=5000, module_name="Module 07")
     (module_dir / "outputs.tf").write_text(content)
+    write_versions_tf(module_dir)
 
     # Add uncompressed binary file
     create_binary_file(module_dir / "uncompressed.bin", 10, compression_level=None)
@@ -437,6 +456,7 @@ def create_module_08_mixed_sizes():
     for i in range(1, 501):
         content = SMALL_FILE_TEMPLATE.render(index=i, random_string=random_string)
         (module_dir / f"small_{i:03d}.tf").write_text(content)
+    write_versions_tf(module_dir)
 
     # Mix of binary files with different compression
     create_binary_file(module_dir / "no_compression.bin", 5, compression_level=None)
@@ -467,6 +487,7 @@ module "sub_c" {
   source = "./modules/sub-c"
 }
 """)
+    write_versions_tf(module_dir)
 
     # Create 3 submodules
     for letter in ["a", "b", "c"]:
@@ -476,6 +497,7 @@ module "sub_c" {
         # Create submodule main file
         content = SUBMODULE_TEMPLATE.render(name=letter, resource_count=200)
         (sub_dir / "main.tf").write_text(content)
+        write_versions_tf(sub_dir)
 
         # Create sub-submodules
         submodule_calls = []
@@ -487,6 +509,7 @@ module "sub_c" {
                 name=f"{letter}_{num}", resource_count=100
             )
             (sub_sub_dir / "main.tf").write_text(content)
+            write_versions_tf(sub_sub_dir)
 
             # Add binary file to sub-submodule
             create_binary_file(
@@ -555,6 +578,7 @@ def create_module_10_extreme():
         random_data=random_data,
     )
     (nested_dir / "deep.tf").write_text(content)
+    write_versions_tf(nested_dir)
 
     # Large data file
     content = LOCALS_TF_TEMPLATE.render(
@@ -567,6 +591,7 @@ def create_module_10_extreme():
         random_data=random_data,
     )
     (module_dir / "data.tf").write_text(content)
+    write_versions_tf(module_dir)
 
     # Variety of binary files
     create_binary_file(module_dir / "no_compress.bin", 10, compression_level=None)
