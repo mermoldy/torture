@@ -111,3 +111,6 @@ This configuration produce following artifacts:
 | <a name="output_initialization_summary"></a> [initialization\_summary](#output\_initialization\_summary) | Summary of initialization resources |
 | <a name="output_resource_summary"></a> [resource\_summary](#output\_resource\_summary) | Summary of all resources created |
 <!-- END_TF_DOCS -->
+
+
+
