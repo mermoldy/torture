@@ -1,4 +1,4 @@
-variable "small_resource_count" {
+variable "small_resource_count2" {
   description = "Number of small resources to create. Small resources are low-cost to plan."
   type        = number
   default     = 1000
