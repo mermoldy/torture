@@ -1,5 +1,5 @@
 [project]
-name = "torture"
+name = "torture222"
 version = "0.1.0"
 description = "The IACP pipeline test generator and framework for OpenTofu/Terraform automations."
 readme = "README.md"
